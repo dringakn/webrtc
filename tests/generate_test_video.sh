@@ -13,17 +13,20 @@
 #    - Defaults: duration=60 seconds, size=320x240, rate=10 fps, output file test.mp4, image file ball.png
 #
 # Audio:
-#   By default audio is added using a sine wave (220 Hz). To disable audio, use the -a option with "no".
+#   By default, audio is added using a novel aevalsrc equation:
+#     sin(2*PI*(440+20*sin(2*PI*0.25*t))*t)
+#   which produces a modulated tone. Audio is encoded with AAC at 32 kbps to keep the file size low.
+#   To disable audio, use the -a option with "no".
 #
 # Options:
 #   -m mode       (video type: "testsrc" (default) or "bounce")
 #   -d duration   (duration in seconds; default: testsrc=10, bounce=60)
-#   -s size       (resolution e.g. 320x240; default: 320x240)
+#   -s size       (resolution, e.g. 320x240; default: 320x240)
 #   -r rate       (frame rate in fps; default: 10)
 #   -o filename   (output file name; default: test.mp4)
 #   -I image      (image file for bounce mode; default: data/ball.png)
 #   -F            (force overwrite output file (ffmpeg -y))
-#   -a yes|no    (include audio? default is yes)
+#   -a yes|no     (include audio? default is yes)
 #   -h            (display this help/usage message)
 #
 # Example usage:
@@ -39,7 +42,7 @@ if ! command -v ffmpeg &> /dev/null; then
     exit 1
 fi
 
-# Default mode is "bounce" (or "testsrc")
+# Default mode ("bounce" in this script, though you can choose "testsrc" if desired)
 mode="bounce"
 # Set default values for parameters.
 default_duration_testsrc=10
@@ -126,7 +129,9 @@ else
     force_flag=""
 fi
 
-# Check mode and build the appropriate ffmpeg command.
+# Define the novel audio expression using aevalsrc.
+audio_filter="aevalsrc=exprs=sin(2*PI*(440+20*sin(2*PI*0.25*t))*t):duration=${duration}:sample_rate=44100:channel_layout=stereo"
+
 if [ "${mode}" == "bounce" ]; then
     # Check if the image file exists.
     if [ ! -f "${image}" ]; then
@@ -142,9 +147,9 @@ if [ "${mode}" == "bounce" ]; then
         ffmpeg ${force_flag} \
           -f lavfi -i "color=c=black:s=${size}:d=${duration}:r=${rate}" \
           -i "${image}" \
-          -f lavfi -i "sine=frequency=220:duration=${duration}" \
+          -f lavfi -i "${audio_filter}" \
           -filter_complex "${filter}" \
-          -c:v libx264 -c:a aac -shortest \
+          -c:v libx264 -c:a aac -b:a 32k -shortest \
           "data/${output}"
     else
         ffmpeg ${force_flag} \
@@ -158,8 +163,8 @@ else
     if [ "${audio}" == "yes" ]; then
         ffmpeg ${force_flag} \
           -f lavfi -i "testsrc=duration=${duration}:size=${size}:rate=${rate}" \
-          -f lavfi -i "sine=frequency=220:duration=${duration}" \
-          -c:v libx264 -c:a aac -shortest \
+          -f lavfi -i "${audio_filter}" \
+          -c:v libx264 -c:a aac -b:a 32k -shortest \
           "data/${output}"
     else
         ffmpeg ${force_flag} \
