@@ -4,7 +4,7 @@ webrtc_client.py
 
 This script implements a WebRTC client that:
   - Creates an RTCPeerConnection and opens a DataChannel for binary data transfer.
-  - Generates one million random 3D points per frame with NumPy (dtype=float32).
+  - Generates random 3D points with NumPy (dtype=float32).
   - Transmits these frames at 4Hz for one minute.
   - Uses an HTTP POST to exchange SDP offers/answers with the signaling server.
   
@@ -48,8 +48,14 @@ class WebRTCClient:
         """
         Establish a WebRTC connection using SDP offer/answer via the signaling server.
         """
-        offer = await self.pc.createOffer()
-        await self.pc.setLocalDescription(offer)
+        # Create the offer and set it as the local description.
+        await self.pc.setLocalDescription(await self.pc.createOffer())
+
+        # Wait for ICE gathering to finish.
+        while self.pc.iceGatheringState != "complete":
+            await asyncio.sleep(0.1)
+
+        # Now self.pc.localDescription is the fully gathered SDP.
         logging.info("SDP offer created. Sending to signaling server...")
 
         async with aiohttp.ClientSession() as session:
@@ -61,11 +67,13 @@ class WebRTCClient:
                     raise Exception(f"Signaling server error: {response.status}")
                 answer_data = await response.json()
 
+        # Set the remote description to complete the handshake.
         answer = RTCSessionDescription(sdp=answer_data["sdp"], type=answer_data["type"])
         await self.pc.setRemoteDescription(answer)
         logging.info("SDP answer received. WebRTC connection established.")
 
-    async def send_data_stream(self, duration: int = 60, frequency: int = 4):
+
+    async def send_data_stream(self, duration: int = 60, frequency: int = 4, data_size=1_000):
         """
         Sends binary frames over the data channel.
         
@@ -79,7 +87,7 @@ class WebRTCClient:
 
         for frame in range(int(num_frames)):
             try:
-                data = np.random.rand(1_000_000, 3).astype(np.float32)
+                data = np.random.rand(data_size, 3).astype(np.float32)
                 binary_data = data.tobytes()
                 self.channel.send(binary_data)
                 logging.info("Sent frame %d/%d", frame + 1, int(num_frames))
@@ -98,11 +106,11 @@ async def main(signaling_url: str):
     while client.channel.readyState != "open":
         await asyncio.sleep(0.1)
 
-    await client.send_data_stream()
+    await client.send_data_stream(duration=10, frequency=4, data_size=1_000)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="WebRTC Client for transmitting one million 3D points per frame.")
+    parser = argparse.ArgumentParser(description="WebRTC Client for transmitting 3D points.")
     parser.add_argument(
         "--signaling",
         type=str,
