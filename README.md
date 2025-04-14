@@ -37,6 +37,20 @@ This project implements a secure, robust, and scalable WebRTC-based system for t
 - **Design Intent:**  
   Ensures a reliable data channel is established before streaming begins, with comprehensive logging for debugging and performance monitoring.
 
+### Test Video Generator
+
+It also includes a utility script, `tests/generate_test_video.sh`, for generating test video files with ffmpeg. The script supports two modes:
+
+- **testsrc mode:**  
+  Uses ffmpeg’s built‑in test pattern (testsrc) to create a video, with defaults of 10 seconds, 320×240 resolution, and 10 fps.
+
+- **bounce mode (default):**  
+  Overlays and animates an external image (default: `data/ball.png`) bouncing over a black background. In this mode, the default duration is 60 seconds.
+
+Audio is enabled by default—using aevalsrc equation that generates a novel modulated tone (sinusoidal modulation around 440 Hz)—and is encoded at 32 kbps to keep file size in check. Audio can be disabled using the `-a no` option.
+
+Additional customization options include duration, size, frame rate, output file name, image file (for bounce mode), and a force overwrite flag (`-F`) to automatically replace existing test video file.
+
 ## Getting Started
 
 ### Prerequisites
@@ -79,7 +93,7 @@ The client creates an SDP offer, exchanges signaling messages with the server, a
   All communication occurs over encrypted channels (DTLS and SRTP). For production, consider securing the signaling endpoint with HTTPS and adding proper error handling and timeout mechanisms.
 
 - **Scalability:**  
-  The asynchronous and OOP-based design supports concurrent connections and easy extension to more complex transmission scenarios.
+  The asynchronous and OOP design supports concurrent connections and easy extension to more complex transmission scenarios.
 
 ## Contributing
 
