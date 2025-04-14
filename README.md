@@ -1,6 +1,6 @@
 # WebRTC 3D Points Transmission
 
-This project implements a secure, robust, and scalable WebRTC-based system for sending 3D points per frame using a binary NumPy format. The client sends frames at 4 Hz for 1 minute over a secure DataChannel, while the server handles SDP signaling and receives the binary data frames.
+This project implements a secure, robust, and scalable WebRTC-based system for sending 3D points per message using a binary NumPy format. The client sends message at 4 Hz for 1 minute over a secure DataChannel, while the server handles SDP signaling and receives the binary data messages.
 
 ## Overview
 
@@ -11,7 +11,7 @@ This project implements a secure, robust, and scalable WebRTC-based system for s
   WebRTC's built-in DTLS/SRTP encryption secures the transmission, protecting data integrity and privacy. In production, further security measures (such as HTTPS for signaling) are recommended.
 
 - **Efficiency:**  
-  The client uses NumPy to generate and efficiently serialize 3D points per frame (as 32-bit floats) into a compact binary format, which is transmitted at a steady 4 Hz.
+  The client uses NumPy to generate and efficiently serialize 3D points per message (as 32-bit floats) into a compact binary format, which is transmitted at a steady 4 Hz.
 
 ## Components
 
@@ -21,8 +21,8 @@ This project implements a secure, robust, and scalable WebRTC-based system for s
 
   - Hosts an HTTP signaling endpoint (`/offer`) using aiohttp.
   - Creates a new RTCPeerConnection per incoming SDP offer.
-  - Receives and processes binary frames by converting them to NumPy arrays.
-  - Logs connection events and frame details for monitoring.
+  - Receives and processes binary messages by converting them to NumPy arrays.
+  - Logs connection events and message details for monitoring.
 
 - **Design Intent:**  
   Avoids reusing connections in a closed state by spawning a fresh connection for each offer, maintaining scalability and robustness.
@@ -32,8 +32,8 @@ This project implements a secure, robust, and scalable WebRTC-based system for s
 - **Functionality:**
 
   - Establishes a secure WebRTC connection using an SDP offer/answer exchange with the signaling server.
-  - Generates and transmits 3D points (each frame) using NumPy at 4 Hz over a secure DataChannel.
-  - Logs the connection state and successful frame transmissions.
+  - Generates and transmits 3D points (each message) using NumPy at 4 Hz over a secure DataChannel.
+  - Logs the connection state and successful message transmissions.
 
 - **Design Intent:**  
   Ensures a reliable data channel is established before streaming begins, with comprehensive logging for debugging and performance monitoring.
