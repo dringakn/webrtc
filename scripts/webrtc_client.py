@@ -88,6 +88,7 @@ class WebRTCClient:
         for frame in range(int(num_frames)):
             try:
                 data = np.random.rand(data_size, 3).astype(np.float32)
+                data[0] = frame  # Set the first point to (frame,frame,frame)
                 binary_data = data.tobytes()
                 self.channel.send(binary_data)
                 logging.info("Sent frame %d/%d", frame + 1, int(num_frames))
@@ -106,7 +107,7 @@ async def main(signaling_url: str):
     while client.channel.readyState != "open":
         await asyncio.sleep(0.1)
 
-    await client.send_data_stream(duration=10, frequency=4, data_size=1_000)
+    await client.send_data_stream(duration=10, frequency=4, data_size=1_000_000)
 
 
 if __name__ == "__main__":
