@@ -1,7 +1,6 @@
-
 # WebRTC 3D Points Transmission
 
-This project implements a secure, robust, and scalable WebRTC-based system for transmitting one million 3D points per frame using a binary NumPy format. The client sends frames at 4 Hz for 1 minute over a secure DataChannel, while the server handles SDP signaling and receives the binary data frames.
+This project implements a secure, robust, and scalable WebRTC-based system for sending 3D points per frame using a binary NumPy format. The client sends frames at 4 Hz for 1 minute over a secure DataChannel, while the server handles SDP signaling and receives the binary data frames.
 
 ## Overview
 
@@ -12,13 +11,14 @@ This project implements a secure, robust, and scalable WebRTC-based system for t
   WebRTC's built-in DTLS/SRTP encryption secures the transmission, protecting data integrity and privacy. In production, further security measures (such as HTTPS for signaling) are recommended.
 
 - **Efficiency:**  
-  The client uses NumPy to generate and efficiently serialize one million 3D points per frame (as 32-bit floats) into a compact binary format, which is transmitted at a steady 4 Hz.
+  The client uses NumPy to generate and efficiently serialize 3D points per frame (as 32-bit floats) into a compact binary format, which is transmitted at a steady 4 Hz.
 
 ## Components
 
 ### Server (webrtc_server.py)
 
-- **Functionality:**  
+- **Functionality:**
+
   - Hosts an HTTP signaling endpoint (`/offer`) using aiohttp.
   - Creates a new RTCPeerConnection per incoming SDP offer.
   - Receives and processes binary frames by converting them to NumPy arrays.
@@ -29,9 +29,10 @@ This project implements a secure, robust, and scalable WebRTC-based system for t
 
 ### Client (webrtc_client.py)
 
-- **Functionality:**  
+- **Functionality:**
+
   - Establishes a secure WebRTC connection using an SDP offer/answer exchange with the signaling server.
-  - Generates and transmits one million 3D points (each frame) using NumPy at 4 Hz over a secure DataChannel.
+  - Generates and transmits 3D points (each frame) using NumPy at 4 Hz over a secure DataChannel.
   - Logs the connection state and successful frame transmissions.
 
 - **Design Intent:**  
