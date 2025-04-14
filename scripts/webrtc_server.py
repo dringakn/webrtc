@@ -26,7 +26,7 @@ class WebRTCServer:
     async def handle_offer(self, request):
         try:
             params = await request.json()
-            logging.info("Received SDP offer from client.")
+            logging.info(f"Received SDP offer from client.")
 
             # Build offer description.
             offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
@@ -36,20 +36,20 @@ class WebRTCServer:
 
             @pc.on("datachannel")
             def on_datachannel(channel):
-                logging.info("Data channel created by remote peer: %s", channel.label)
+                logging.info(f"Data channel created by remote peer: {channel.label}")
 
                 @channel.on("message")
                 async def on_message(message):
                     if isinstance(message, bytes):
-                        logging.info("Data channel message received.")
+                        logging.info(f"Data channel message received.")
                         try:
                             # Decode the binary data into a NumPy array of shape (-1, 3).
                             arr = np.frombuffer(message, dtype=np.float32).reshape(-1, 3)
-                            logging.info("Received frame with shape: %s", arr.shape)
+                            logging.info(f"Received frame {arr[0][0]} with shape: {arr.shape}")
                         except Exception as e:
-                            logging.error("Failed to parse incoming frame: %s", e)
+                            logging.error(f"Failed to parse incoming frame: {e}")
                     else:
-                        logging.warning("Received a non-binary message.")
+                        logging.warning(f"Received a non-binary message.")
 
             # Set remote description and create answer.
             await pc.setRemoteDescription(offer)
@@ -63,7 +63,7 @@ class WebRTCServer:
                 {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
             )
         except Exception as e:
-            logging.error("Error handling offer: %s", e)
+            logging.error(f"Error handling offer: {e}")
             return web.Response(status=500, text="Internal Server Error")
 
     async def run(self, host="0.0.0.0", port=8080):
@@ -72,12 +72,12 @@ class WebRTCServer:
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, host, port)
-        logging.info("Signaling server running on %s:%s", host, port)
+        logging.info(f"Signaling server running on {host}:{port}")
         await site.start()
 
         # Run indefinitely.
         while True:
-            await asyncio.sleep(3600)
+            await asyncio.sleep(1)
 
 
 if __name__ == "__main__":
