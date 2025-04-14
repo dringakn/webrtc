@@ -55,7 +55,6 @@ class WebRTCClient:
         while self.pc.iceGatheringState != "complete":
             await asyncio.sleep(0.1)
 
-        # Now self.pc.localDescription is the fully gathered SDP.
         logging.info("SDP offer created. Sending to signaling server...")
 
         async with aiohttp.ClientSession() as session:
@@ -72,14 +71,14 @@ class WebRTCClient:
         await self.pc.setRemoteDescription(answer)
         logging.info("SDP answer received. WebRTC connection established.")
 
-
-    async def send_data_stream(self, duration: int = 60, frequency: int = 4, data_size=1_000):
+    async def send_data_stream(self, duration: int = 60, frequency: int = 4, points: int = 1_000):
         """
         Sends binary frames over the data channel.
         
         Args:
             duration (int): Duration in seconds (default: 60).
             frequency (int): Frames per second (default: 4).
+            points (int): Number of 3D points per message.
         """
         interval = 1 / frequency
         num_frames = duration * frequency
@@ -87,8 +86,8 @@ class WebRTCClient:
 
         for frame in range(int(num_frames)):
             try:
-                data = np.random.rand(data_size, 3).astype(np.float32)
-                data[0] = frame  # Set the first point to (frame,frame,frame)
+                data = np.random.rand(points, 3).astype(np.float32)
+                data[0] = frame  # Embed frame number in the first point for reference.
                 binary_data = data.tobytes()
                 self.channel.send(binary_data)
                 logging.info("Sent frame %d/%d", frame + 1, int(num_frames))
@@ -99,7 +98,7 @@ class WebRTCClient:
         logging.info("Data stream transmission completed.")
 
 
-async def main(signaling_url: str):
+async def main(signaling_url: str, points: int):
     client = WebRTCClient(signaling_url)
     await client.connect()
 
@@ -107,7 +106,7 @@ async def main(signaling_url: str):
     while client.channel.readyState != "open":
         await asyncio.sleep(0.1)
 
-    await client.send_data_stream(duration=10, frequency=4, data_size=1_000_000)
+    await client.send_data_stream(duration=10, frequency=4, points=points)
 
 
 if __name__ == "__main__":
@@ -118,9 +117,15 @@ if __name__ == "__main__":
         default="http://localhost:8080/offer",
         help="Signaling server URL (default: http://localhost:8080/offer)",
     )
+    parser.add_argument(
+        "--points",
+        type=int,
+        default=1_00_000,
+        help="Number of 3D points per message (default: 1,00,000)",
+    )
     args = parser.parse_args()
 
     try:
-        asyncio.run(main(args.signaling))
+        asyncio.run(main(args.signaling, args.points))
     except KeyboardInterrupt:
         logging.info("Client interrupted; shutting down.")
