@@ -7,6 +7,7 @@ This script implements a WebRTC server that:
   - Creates a new RTCPeerConnection per incoming SDP offer.
   - Establishes a secure data channel.
   - Receives binary data frames with 3D points and decodes them into NumPy arrays.
+  - Receives audio and video streams from the client.
 """
 
 import asyncio
@@ -26,7 +27,7 @@ class WebRTCServer:
     async def handle_offer(self, request):
         try:
             params = await request.json()
-            logging.info(f"Received SDP offer from client.")
+            logging.info("Received SDP offer from client.")
 
             # Build offer description.
             offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
@@ -41,7 +42,7 @@ class WebRTCServer:
                 @channel.on("message")
                 async def on_message(message):
                     if isinstance(message, bytes):
-                        logging.info(f"Data channel message received.")
+                        logging.info("Data channel message received.")
                         try:
                             # Decode the binary data into a NumPy array of shape (-1, 3).
                             arr = np.frombuffer(message, dtype=np.float32).reshape(-1, 3)
@@ -49,14 +50,29 @@ class WebRTCServer:
                         except Exception as e:
                             logging.error(f"Failed to parse incoming frame: {e}")
                     else:
-                        logging.warning(f"Received a non-binary message.")
+                        logging.warning("Received a non-binary message.")
+
+            @pc.on("track")
+            def on_track(track):
+                logging.info(f"Track '{track.kind}' received.")
+
+                async def recv():
+                    while True:
+                        try:
+                            frame = await track.recv()
+                            logging.info(f"Received {track.kind} frame: {frame}")
+                        except Exception as e:
+                            logging.error(f"Error receiving {track.kind} frame: {e}")
+                            break
+                # Start task to process incoming media frames.
+                asyncio.ensure_future(recv())
 
             # Set remote description and create answer.
             await pc.setRemoteDescription(offer)
             answer = await pc.createAnswer()
             await pc.setLocalDescription(answer)
 
-            # Save the connection to prevent it from being garbage collected.
+            # Save the connection to prevent garbage collection.
             self.connections.append(pc)
             logging.info("Sending SDP answer to client.")
             return web.json_response(

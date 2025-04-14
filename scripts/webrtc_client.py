@@ -4,13 +4,10 @@ webrtc_client.py
 
 This script implements a WebRTC client that:
   - Creates an RTCPeerConnection and opens a DataChannel for binary data transfer.
-  - Generates random 3D points with NumPy (dtype=float32).
-  - Transmits these frames at 4Hz for one minute.
-  - Uses an HTTP POST to exchange SDP offers/answers with the signaling server.
-  
-Setup Notes:
-- sudo apt-get install python3-pip
-- pip3 install aiohttp aiortc numpy --break-system-packages
+  - Streams audio and video from the ../tests/data/test.mp4 file to the server.
+  - Generates random 3D points with NumPy (dtype=float32) and sends them over the data channel.
+  - Transmits these frames at 4Hz for a set duration.
+  - Exchanges SDP offers/answers with the signaling server via HTTP.
 """
 
 import argparse
@@ -20,6 +17,7 @@ import logging
 import numpy as np
 import aiohttp
 from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc.contrib.media import MediaPlayer  # For streaming media from a file
 
 logging.basicConfig(level=logging.INFO)
 
@@ -28,7 +26,7 @@ class WebRTCClient:
     def __init__(self, signaling_url: str):
         """
         Initialize a new WebRTC client.
-        
+
         Args:
             signaling_url (str): The URL of the signaling server (e.g., http://localhost:8080/offer)
         """
@@ -44,6 +42,15 @@ class WebRTCClient:
         def on_open():
             logging.info("Data channel is open and ready for data transmission.")
 
+        # Add media tracks from test.mp4 for audio and video streaming.
+        self.player = MediaPlayer("../tests/data/test.mp4")
+        if self.player.audio:
+            self.pc.addTrack(self.player.audio)
+            logging.info("Added audio track from file ../tests/data/test.mp4")
+        if self.player.video:
+            self.pc.addTrack(self.player.video)
+            logging.info("Added video track from file ../tests/data/test.mp4")
+
     async def connect(self):
         """
         Establish a WebRTC connection using SDP offer/answer via the signaling server.
@@ -51,7 +58,7 @@ class WebRTCClient:
         # Create the offer and set it as the local description.
         await self.pc.setLocalDescription(await self.pc.createOffer())
 
-        # Wait for ICE gathering to finish.
+        # Wait for ICE gathering to complete.
         while self.pc.iceGatheringState != "complete":
             await asyncio.sleep(0.1)
 
@@ -74,10 +81,10 @@ class WebRTCClient:
     async def send_data_stream(self, duration: int = 60, frequency: int = 4, points: int = 1_000):
         """
         Sends binary frames over the data channel.
-        
+
         Args:
-            duration (int): Duration in seconds (default: 60).
-            frequency (int): Frames per second (default: 4).
+            duration (int): Duration in seconds.
+            frequency (int): Frames per second.
             points (int): Number of 3D points per message.
         """
         interval = 1 / frequency
@@ -106,11 +113,12 @@ async def main(signaling_url: str, points: int):
     while client.channel.readyState != "open":
         await asyncio.sleep(0.1)
 
-    await client.send_data_stream(duration=10, frequency=4, points=points)
-
+    # Start sending binary data over the data channel concurrently.
+    data_stream_task = asyncio.create_task(client.send_data_stream(duration=10, frequency=4, points=points))
+    await data_stream_task
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="WebRTC Client for transmitting 3D points.")
+    parser = argparse.ArgumentParser(description="WebRTC Client for transmitting 3D points and media stream.")
     parser.add_argument(
         "--signaling",
         type=str,
@@ -120,8 +128,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--points",
         type=int,
-        default=1_00_000,
-        help="Number of 3D points per message (default: 1,00,000)",
+        default=100000,
+        help="Number of 3D points per message (default: 100,000)",
     )
     args = parser.parse_args()
 

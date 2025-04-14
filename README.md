@@ -1,62 +1,53 @@
-# WebRTC 3D Points Transmission
+# WebRTC 3D Points and Media Transmission
 
-This project implements a secure, robust, and scalable WebRTC-based system for sending 3D points per message using a binary NumPy format. The client sends message at 4 Hz for 1 minute over a secure DataChannel, while the server handles SDP signaling and receives the binary data messages.
+This project implements a secure and scalable WebRTC system that sends 3D point data and simultaneously streams an audio+video file. The client transmits binary messages (using a compact NumPy format) at 4 Hz via a DataChannel while also streaming media from a test file (`../tests/data/test.mp4`) to the server.
 
 ## Overview
 
-- **Robust and Scalable:**  
-  Each incoming SDP offer creates a new RTCPeerConnection, ensuring that each connection is isolated and managed independently. The design is built using an object-oriented approach and leverages asynchronous I/O for scalability.
+- **Dual-Stream Design:**  
+  Each SDP offer creates its own RTCPeerConnection to ensure isolated sessions. The system handles a data channel for 3D points **and** audio/video tracks for media streaming concurrently. This makes the solution both versatile and efficient.
 
-- **Security:**  
-  WebRTC's built-in DTLS/SRTP encryption secures the transmission, protecting data integrity and privacy. In production, further security measures (such as HTTPS for signaling) are recommended.
-
-- **Efficiency:**  
-  The client uses NumPy to generate and efficiently serialize 3D points per message (as 32-bit floats) into a compact binary format, which is transmitted at a steady 4 Hz.
+- **Security & Efficiency:**  
+  WebRTC’s native DTLS/SRTP encryption secures both data and media streams. On the client side, NumPy serializes thousands of 3D points into a lightweight binary format, and the media player streams audio and video without interfering with the data flow.
 
 ## Components
 
 ### Server (webrtc_server.py)
 
 - **Functionality:**
-
   - Hosts an HTTP signaling endpoint (`/offer`) using aiohttp.
-  - Creates a new RTCPeerConnection per incoming SDP offer.
-  - Receives and processes binary messages by converting them to NumPy arrays.
-  - Logs connection events and message details for monitoring.
-
+  - Spawns a fresh RTCPeerConnection for each incoming SDP offer.
+  - Receives binary data messages, converting them into NumPy arrays.
+  - Listens for media tracks (audio and video) and logs received frames for inspection.
 - **Design Intent:**  
-  Avoids reusing connections in a closed state by spawning a fresh connection for each offer, maintaining scalability and robustness.
+  Every connection is independent to maximize scalability. The addition of a media track handler means the server processes both 3D point data and media streams without mixing concerns.
 
 ### Client (webrtc_client.py)
 
 - **Functionality:**
-
-  - Establishes a secure WebRTC connection using an SDP offer/answer exchange with the signaling server.
-  - Generates and transmits 3D points (each message) using NumPy at 4 Hz over a secure DataChannel.
-  - Logs the connection state and successful message transmissions.
-
+  - Initiates a secure WebRTC connection through SDP offer/answer signaling.
+  - Streams binary 3D point data at 4 Hz over a dedicated DataChannel.
+  - Simultaneously streams audio and video from `../tests/data/test.mp4` using media tracks.
 - **Design Intent:**  
-  Ensures a reliable data channel is established before streaming begins, with comprehensive logging for debugging and performance monitoring.
+  The client waits for a fully opened data channel before sending data, ensuring stable transmission. Integrating media streaming with DataChannel communications makes the solution a compact, multi-functional system.
 
 ### Test Video Generator
 
-It also includes a utility script, `tests/generate_test_video.sh`, for generating test video files with ffmpeg. The script supports two modes:
+This project includes a utility script (`tests/generate_test_video.sh`) for creating test video files with ffmpeg. It supports:
 
 - **testsrc mode:**  
-  Uses ffmpeg’s built‑in test pattern (testsrc) to create a video, with defaults of 10 seconds, 320×240 resolution, and 10 fps.
+  Generates a simple test pattern video (default: 10 seconds, 320×240, 10 fps).
 
 - **bounce mode (default):**  
-  Overlays and animates an external image (default: `data/ball.png`) bouncing over a black background. In this mode, the default duration is 60 seconds.
+  Animates an external image (default: `data/ball.png`) bouncing over a black background for 60 seconds.
 
-Audio is enabled by default—using aevalsrc equation that generates a novel modulated tone (sinusoidal modulation around 440 Hz)—and is encoded at 32 kbps to keep file size in check. Audio can be disabled using the `-a no` option.
-
-Additional customization options include duration, size, frame rate, output file name, image file (for bounce mode), and a force overwrite flag (`-F`) to automatically replace existing test video file.
+Audio is enabled by default using a modulated tone (around 440 Hz) and encoded at 32 kbps to keep file sizes down. Options allow you to customize duration, resolution, frame rate, and more.
 
 ## Getting Started
 
 ### Prerequisites
 
-Ensure you have Python 3.7+ installed along with the following packages:
+Ensure you have Python 3.7+ installed along with:
 
 - `aiortc`
 - `aiohttp`
@@ -76,29 +67,29 @@ Start the signaling server:
 python3 webrtc_server.py
 ```
 
-The server listens on `0.0.0.0:8080` by default. Modify the host and port within the script as needed.
+The server defaults to listening on `0.0.0.0:8080`. Adjust host/port settings inside the script as needed.
 
 ### Running the Client
 
-In a separate terminal session, run the client:
+In another terminal, start the client:
 
 ```bash
-python3 webrtc_client.py --signaling http://localhost:8080/offer
+python3 webrtc_client.py --signaling http://localhost:8080/offer --points 100000
 ```
 
-The client creates an SDP offer, exchanges signaling messages with the server, and streams data upon successful connection.
+The client will generate an SDP offer, exchange signaling messages, and once connected, simultaneously stream the test video (audio+video) and binary 3D point data.
 
 ## Security and Production Considerations
 
 - **Data Security:**  
-  All communication occurs over encrypted channels (DTLS and SRTP). For production, consider securing the signaling endpoint with HTTPS and adding proper error handling and timeout mechanisms.
+  All transmission occurs over encrypted channels (DTLS/SRTP). In production, secure the signaling server using HTTPS and add robust error handling.
 
 - **Scalability:**  
-  The asynchronous and OOP design supports concurrent connections and easy extension to more complex transmission scenarios.
+  The asynchronous, object‑oriented design supports multiple concurrent connections and diverse transmission types, making future expansions straightforward.
 
 ## Contributing
 
-Contributions and improvements are welcome. If you encounter issues or have enhancement suggestions, please open an issue or submit a pull request.
+Contributions are welcome. If you have bug fixes, improvements, or suggestions, please open an issue or submit a pull request.
 
 ## License
 
