@@ -12,9 +12,11 @@ This script implements a WebRTC server that:
 
 import asyncio
 import logging
+import subprocess
 import numpy as np
 from aiohttp import web
 from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc.contrib.media import MediaRecorder
 
 logging.basicConfig(level=logging.INFO)
 
@@ -55,18 +57,89 @@ class WebRTCServer:
             @pc.on("track")
             def on_track(track):
                 logging.info(f"Track '{track.kind}' received.")
+                
+                if track.kind == "video":
+                    async def recv_video():
+                        # Option: dynamically detect width/height from the first frame.
+                        frame = await track.recv()
+                        width, height = frame.width, frame.height
+                        logging.info(f"Using video size: {width}x{height}")
 
-                async def recv():
-                    while True:
+                        # Start FFplay to display raw BGR24 frames
+                        ffplay_proc = subprocess.Popen(
+                            [
+                                "ffplay",
+                                "-f", "rawvideo",
+                                "-pixel_format", "bgr24",
+                                "-video_size", f"{width}x{height}",
+                                "-i", "-"  # read from stdin
+                            ],
+                            stdin=subprocess.PIPE
+                        )
+
+                        # Process the first frame
+                        img = frame.to_ndarray(format="bgr24")
+                        ffplay_proc.stdin.write(img.tobytes())
+                        ffplay_proc.stdin.flush()
+
+                        # Now process subsequent frames
+                        while True:
+                            try:
+                                frame = await track.recv()
+                                img = frame.to_ndarray(format="bgr24")
+                                ffplay_proc.stdin.write(img.tobytes())
+                                ffplay_proc.stdin.flush()
+                            except Exception as e:
+                                logging.error(f"Error processing video frame: {e}")
+                                break
+
+                    # Launch the video receiving coroutine.
+                    asyncio.ensure_future(recv_video())
+
+                elif track.kind == "audio":
+                    async def recv_audio():
                         try:
+                            # Wait for first audio frame to determine parameters.
                             frame = await track.recv()
-                            logging.info(f"Received {track.kind} frame: {frame}")
-                        except Exception as e:
-                            logging.error(f"Error receiving {track.kind} frame: {e}")
-                            break
-                # Start task to process incoming media frames.
-                asyncio.ensure_future(recv())
+                            sample_rate = frame.sample_rate
+                            channels = frame.channels
+                            logging.info(f"Audio parameters: {sample_rate} Hz, {channels} channels")
 
+                            # Launch FFplay to live preview raw PCM audio.
+                            ffplay_proc = subprocess.Popen(
+                                [
+                                    "ffplay",
+                                    "-f", "s16le",
+                                    "-ar", str(sample_rate),
+                                    "-ac", str(channels),
+                                    "-i", "-"
+                                ],
+                                stdin=subprocess.PIPE
+                            )
+
+                            # Process the first audio frame.
+                            samples = frame.to_ndarray()  # Assumes float format in range [-1, 1]
+                            samples_i16 = (samples * 32767).astype(np.int16)
+                            ffplay_proc.stdin.write(samples_i16.tobytes())
+                            ffplay_proc.stdin.flush()
+
+                            # Continuously receive and pipe audio frames.
+                            while True:
+                                try:
+                                    frame = await track.recv()
+                                    samples = frame.to_ndarray()
+                                    samples_i16 = (samples * 32767).astype(np.int16)
+                                    ffplay_proc.stdin.write(samples_i16.tobytes())
+                                    ffplay_proc.stdin.flush()
+                                except Exception as inner_e:
+                                    logging.error(f"Error processing audio frame: {inner_e}")
+                                    break
+                        except Exception as e:
+                            logging.error(f"Audio track error: {e}")
+
+                    asyncio.ensure_future(recv_audio())
+                    pass
+                
             # Set remote description and create answer.
             await pc.setRemoteDescription(offer)
             answer = await pc.createAnswer()
