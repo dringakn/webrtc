@@ -7,23 +7,74 @@ This script implements a WebRTC server that:
   - Creates a new RTCPeerConnection per incoming SDP offer.
   - Establishes a secure data channel.
   - Receives binary data frames with 3D points and decodes them into NumPy arrays.
-  - Receives audio and video streams from the client.
+  - Receives and plays audio and video streams from the client.
+  
+Before running, install dependencies:
+  sudo apt-get install portaudio19-dev
+  pip install aiohttp aiortc opencv-python pyaudio numpy
 """
 
 import asyncio
 import logging
-import subprocess
 import numpy as np
+import cv2
+import pyaudio
 from aiohttp import web
 from aiortc import RTCPeerConnection, RTCSessionDescription
-from aiortc.contrib.media import MediaRecorder
 
 logging.basicConfig(level=logging.INFO)
 
+# Initialize PyAudio for audio playback.
+p = pyaudio.PyAudio()
+# for i in range(p.get_device_count()):
+#     dev = p.get_device_info_by_index(i)
+#     print(f"Device {i}: {dev['name']}")
+    
+# We assume stereo audio (2 channels), 48000 Hz sample rate, and 16-bit samples.
+# On your system, find output_device_index=0 based on `aplay -l`.
+audio_stream = p.open(
+    format=pyaudio.paInt16,
+    channels=2,
+    rate=48000,
+    output=True,
+    output_device_index=0
+)
+async def play_video(track):
+    """Continuously receive video frames and display them using OpenCV."""
+    logging.info("Starting video playback.")
+    while True:
+        try:
+            # Receive next video frame.
+            frame = await track.recv()
+            # Convert the frame to a BGR NumPy array for OpenCV.
+            img = frame.to_ndarray(format="bgr24")
+            cv2.imshow("Video", img)
+            # If "q" is pressed, break out of the loop.
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                logging.info("Video playback stopped by user.")
+                break
+        except Exception as e:
+            logging.error(f"Video playback error: {e}")
+            break
+    cv2.destroyAllWindows()
+
+async def play_audio(track):
+    """Continuously receive audio frames and send them to PyAudio."""
+    logging.info("Starting audio playback.")
+    while True:
+        try:
+            # Receive next audio frame.
+            frame = await track.recv()
+            # Convert the frame to a NumPy array then to raw bytes.
+            pcm_data = frame.to_ndarray().tobytes()
+            audio_stream.write(pcm_data)
+        except Exception as e:
+            logging.error(f"Audio playback error: {e}")
+            break
 
 class WebRTCServer:
     def __init__(self):
-        # Hold references to active connections.
+        # Keep a reference to active connections to prevent garbage collection.
         self.connections = []
 
     async def handle_offer(self, request):
@@ -31,131 +82,57 @@ class WebRTCServer:
             params = await request.json()
             logging.info("Received SDP offer from client.")
 
-            # Build offer description.
+            # Build the offer and create a new peer connection.
             offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
-
-            # Create a new peer connection.
             pc = RTCPeerConnection()
 
             @pc.on("datachannel")
             def on_datachannel(channel):
-                logging.info(f"Data channel created by remote peer: {channel.label}")
+                logging.info(f"Data channel created: {channel.label}")
 
                 @channel.on("message")
                 async def on_message(message):
                     if isinstance(message, bytes):
-                        logging.info("Data channel message received.")
+                        logging.info("Received binary data on the data channel.")
                         try:
-                            # Decode the binary data into a NumPy array of shape (-1, 3).
+                            # Decode binary data into a NumPy array assuming float32 values.
                             arr = np.frombuffer(message, dtype=np.float32).reshape(-1, 3)
-                            logging.info(f"Received frame {arr[0][0]} with shape: {arr.shape}")
+                            logging.info(f"Decoded data frame with shape: {arr.shape}")
                         except Exception as e:
-                            logging.error(f"Failed to parse incoming frame: {e}")
+                            logging.error(f"Failed to decode binary data: {e}")
                     else:
-                        logging.warning("Received a non-binary message.")
+                        logging.warning("Received non-binary message on the data channel.")
 
             @pc.on("track")
             def on_track(track):
                 logging.info(f"Track '{track.kind}' received.")
-                
                 if track.kind == "video":
-                    async def recv_video():
-                        # Option: dynamically detect width/height from the first frame.
-                        frame = await track.recv()
-                        width, height = frame.width, frame.height
-                        logging.info(f"Using video size: {width}x{height}")
-
-                        # Start FFplay to display raw BGR24 frames
-                        ffplay_proc = subprocess.Popen(
-                            [
-                                "ffplay",
-                                "-f", "rawvideo",
-                                "-pixel_format", "bgr24",
-                                "-video_size", f"{width}x{height}",
-                                "-i", "-"  # read from stdin
-                            ],
-                            stdin=subprocess.PIPE
-                        )
-
-                        # Process the first frame
-                        img = frame.to_ndarray(format="bgr24")
-                        ffplay_proc.stdin.write(img.tobytes())
-                        ffplay_proc.stdin.flush()
-
-                        # Now process subsequent frames
-                        while True:
-                            try:
-                                frame = await track.recv()
-                                img = frame.to_ndarray(format="bgr24")
-                                ffplay_proc.stdin.write(img.tobytes())
-                                ffplay_proc.stdin.flush()
-                            except Exception as e:
-                                logging.error(f"Error processing video frame: {e}")
-                                break
-
-                    # Launch the video receiving coroutine.
-                    asyncio.ensure_future(recv_video())
-
+                    # Schedule video playback.
+                    asyncio.ensure_future(play_video(track))
                 elif track.kind == "audio":
-                    async def recv_audio():
-                        try:
-                            # Wait for first audio frame to determine parameters.
-                            frame = await track.recv()
-                            sample_rate = frame.sample_rate
-                            channels = frame.channels
-                            logging.info(f"Audio parameters: {sample_rate} Hz, {channels} channels")
+                    # Schedule audio playback.
+                    asyncio.ensure_future(play_audio(track))
+                else:
+                    logging.warning(f"Unsupported track type: {track.kind}")
 
-                            # Launch FFplay to live preview raw PCM audio.
-                            ffplay_proc = subprocess.Popen(
-                                [
-                                    "ffplay",
-                                    "-f", "s16le",
-                                    "-ar", str(sample_rate),
-                                    "-ac", str(channels),
-                                    "-i", "-"
-                                ],
-                                stdin=subprocess.PIPE
-                            )
-
-                            # Process the first audio frame.
-                            samples = frame.to_ndarray()  # Assumes float format in range [-1, 1]
-                            samples_i16 = (samples * 32767).astype(np.int16)
-                            ffplay_proc.stdin.write(samples_i16.tobytes())
-                            ffplay_proc.stdin.flush()
-
-                            # Continuously receive and pipe audio frames.
-                            while True:
-                                try:
-                                    frame = await track.recv()
-                                    samples = frame.to_ndarray()
-                                    samples_i16 = (samples * 32767).astype(np.int16)
-                                    ffplay_proc.stdin.write(samples_i16.tobytes())
-                                    ffplay_proc.stdin.flush()
-                                except Exception as inner_e:
-                                    logging.error(f"Error processing audio frame: {inner_e}")
-                                    break
-                        except Exception as e:
-                            logging.error(f"Audio track error: {e}")
-
-                    asyncio.ensure_future(recv_audio())
-                    pass
-                
-            # Set remote description and create answer.
+            # Set remote description, create and set local answer.
             await pc.setRemoteDescription(offer)
             answer = await pc.createAnswer()
             await pc.setLocalDescription(answer)
 
-            # Save the connection to prevent garbage collection.
+            # Keep a reference to the connection.
             self.connections.append(pc)
             logging.info("Sending SDP answer to client.")
-            return web.json_response(
-                {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
-            )
+            return web.json_response({
+                "sdp": pc.localDescription.sdp,
+                "type": pc.localDescription.type
+            })
         except Exception as e:
             logging.error(f"Error handling offer: {e}")
             return web.Response(status=500, text="Internal Server Error")
 
     async def run(self, host="0.0.0.0", port=8080):
+        # Set up the aiohttp web app.
         app = web.Application()
         app.add_routes([web.post("/offer", self.handle_offer)])
         runner = web.AppRunner(app)
@@ -164,10 +141,9 @@ class WebRTCServer:
         logging.info(f"Signaling server running on {host}:{port}")
         await site.start()
 
-        # Run indefinitely.
+        # Keep the server running.
         while True:
             await asyncio.sleep(1)
-
 
 if __name__ == "__main__":
     server = WebRTCServer()
@@ -175,3 +151,8 @@ if __name__ == "__main__":
         asyncio.run(server.run())
     except KeyboardInterrupt:
         logging.info("Server shutdown requested; exiting.")
+    finally:
+        # Clean up the PyAudio stream upon exit.
+        audio_stream.stop_stream()
+        audio_stream.close()
+        p.terminate()
